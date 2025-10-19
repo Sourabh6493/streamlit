@@ -41,6 +41,7 @@ import { DebugVisitor } from "./visitors/DebugVisitor"
 import { ElementsSetVisitor } from "./visitors/ElementsSetVisitor"
 import { FilterMainScriptElementsVisitor } from "./visitors/FilterMainScriptElementsVisitor"
 import { GetNodeByDeltaPathVisitor } from "./visitors/GetNodeByDeltaPathVisitor"
+import { SetNodeByDeltaPathVisitor } from "./visitors/SetNodeByDeltaPathVisitor"
 
 interface LogoMetadata {
   // Associated scriptHash that created the logo
@@ -212,6 +213,29 @@ export class AppRoot {
     })
   }
 
+  private runActionOnAllChildren(
+    deltaPath: number[],
+    action: (child: AppNode, deltaPath: number[]) => AppNode
+  ): BlockNode {
+    const newChildren = (this.root.children as BlockNode[]).map(
+      (child, index) => {
+        if (deltaPath.length === 0 || deltaPath[0] !== index) {
+          return child
+        }
+        return action(child, deltaPath.slice(1))
+      }
+    )
+
+    return new BlockNode(
+      this.mainScriptHash,
+      newChildren,
+      this.root.deltaBlock,
+      this.root.scriptRunId,
+      this.root.fragmentId,
+      this.root.deltaMsgReceivedAt
+    )
+  }
+
   public applyDelta(
     scriptRunId: string,
     delta: Delta,
@@ -371,7 +395,14 @@ export class AppRoot {
     )
     return new AppRoot(
       this.mainScriptHash,
-      this.root.setIn(deltaPath, elementNode, scriptRunId),
+      this.runActionOnAllChildren(deltaPath, (child, updatedDeltaPath) =>
+        SetNodeByDeltaPathVisitor.setNodeAtPath(
+          child,
+          updatedDeltaPath,
+          elementNode,
+          scriptRunId
+        )
+      ),
       this.appLogo
     )
   }
@@ -411,7 +442,14 @@ export class AppRoot {
     )
     return new AppRoot(
       this.mainScriptHash,
-      this.root.setIn(deltaPath, blockNode, scriptRunId),
+      this.runActionOnAllChildren(deltaPath, (child, updatedDeltaPath) =>
+        SetNodeByDeltaPathVisitor.setNodeAtPath(
+          child,
+          updatedDeltaPath,
+          blockNode,
+          scriptRunId
+        )
+      ),
       this.appLogo
     )
   }
@@ -436,7 +474,14 @@ export class AppRoot {
     const elementNode = existingNode.arrowAddRows(namedDataSet, scriptRunId)
     return new AppRoot(
       this.mainScriptHash,
-      this.root.setIn(deltaPath, elementNode, scriptRunId),
+      this.runActionOnAllChildren(deltaPath, (child, updatedDeltaPath) =>
+        SetNodeByDeltaPathVisitor.setNodeAtPath(
+          child,
+          updatedDeltaPath,
+          elementNode,
+          scriptRunId
+        )
+      ),
       this.appLogo
     )
   }
