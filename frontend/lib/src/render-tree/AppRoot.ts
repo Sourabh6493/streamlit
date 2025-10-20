@@ -21,6 +21,7 @@ import {
   Element,
   ForwardMsgMetadata,
   Logo,
+  Transient as TransientProto,
 } from "@streamlit/protobuf"
 
 import { ensureError } from "~lib/util/ErrorHandling"
@@ -36,6 +37,7 @@ import {
 import { AppNode, NO_SCRIPT_RUN_ID } from "./AppNode.interface"
 import { BlockNode } from "./BlockNode"
 import { ElementNode } from "./ElementNode"
+import { TransientNode } from "./TransientNode"
 import { ClearStaleNodeVisitor } from "./visitors/ClearStaleNodeVisitor"
 import { DebugVisitor } from "./visitors/DebugVisitor"
 import { ElementsSetVisitor } from "./visitors/ElementsSetVisitor"
@@ -236,6 +238,33 @@ export class AppRoot {
     )
   }
 
+  private runActionByDeltaPath(
+    deltaPath: number[],
+    action: (child: AppNode, deltaPath: number[]) => AppNode
+  ): AppNode[] {
+    return this.root.children.map((child, index) => {
+      if (deltaPath.length === 0 || deltaPath[0] !== index) {
+        return child
+      }
+      return action(child, deltaPath.slice(1))
+    })
+  }
+
+  private setNodeByDeltaPathForScriptRun(
+    deltaPath: number[],
+    node: AppNode,
+    scriptRunId: string
+  ): AppNode[] {
+    return this.runActionByDeltaPath(deltaPath, (child, updatedDeltaPath) =>
+      SetNodeByDeltaPathVisitor.setNodeAtPath(
+        child,
+        updatedDeltaPath,
+        node,
+        scriptRunId
+      )
+    )
+  }
+
   public applyDelta(
     scriptRunId: string,
     delta: Delta,
@@ -266,6 +295,18 @@ export class AppRoot {
           activeScriptHash,
           delta.fragmentId,
           deltaMsgReceivedAt
+        )
+      }
+
+      case "newTransient": {
+        const transient = delta.newTransient as TransientProto
+        return this.addTransient(
+          deltaPath,
+          scriptRunId,
+          transient,
+          metadata,
+          activeScriptHash,
+          delta.fragmentId
         )
       }
 
@@ -449,6 +490,49 @@ export class AppRoot {
           blockNode,
           scriptRunId
         )
+      ),
+      this.appLogo
+    )
+  }
+
+  addTransient(
+    deltaPath: number[],
+    scriptRunId: string,
+    transient: TransientProto,
+    metadata: ForwardMsgMetadata,
+    activeScriptHash: string,
+    fragmentId?: string,
+    deltaMsgReceivedAt?: number
+  ): AppRoot {
+    const transientNode = new TransientNode(
+      scriptRunId,
+      undefined, // We do not have an anchor yet
+      transient.elements.map(
+        element =>
+          new ElementNode(
+            element as Element,
+            metadata,
+            scriptRunId,
+            activeScriptHash,
+            fragmentId
+          )
+      ),
+      deltaMsgReceivedAt
+    )
+
+    return new AppRoot(
+      this.mainScriptHash,
+      new BlockNode(
+        this.mainScriptHash,
+        this.setNodeByDeltaPathForScriptRun(
+          deltaPath,
+          transientNode,
+          scriptRunId
+        ),
+        new BlockProto({ allowEmpty: true }),
+        scriptRunId,
+        fragmentId,
+        deltaMsgReceivedAt
       ),
       this.appLogo
     )
